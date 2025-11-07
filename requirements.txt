@@ -1,0 +1,12 @@
+# Core UI
+streamlit>=1.40
+plotly>=5.24
+matplotlib>=3.8
+pillow>=10.3
+
+# Data handling
+numpy>=1.26
+pandas>=2.2
+
+# Optional but recommended for deployment consistency
+altair>=5.3

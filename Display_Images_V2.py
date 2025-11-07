@@ -1,5 +1,5 @@
 import streamlit as st
-from PIL import Image
+from PIL import Image, ImageEnhance
 import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
@@ -8,7 +8,7 @@ import pandas as pd
 import os
 
 st.set_page_config(page_title="Interactive Line Scan", layout="wide")
-st.title("🔬 Interactive Line-Scan Tool (Enhanced UI)")
+st.title("🔬 Interactive Line-Scan Tool (Final Polished Version)")
 
 # ---------- state ----------
 if "lines" not in st.session_state:
@@ -21,18 +21,19 @@ if uploaded:
     img = Image.open(uploaded)
     raw = np.array(img)
 
-    # 16-bit → 8-bit for display
+    # ---------- prepare image ----------
     if img.mode == "I;16":
         disp = (raw / (raw.max() if raw.max() > 0 else 1) * 255).astype(np.uint8)
+        img_disp = Image.fromarray(disp)
         raw_data = raw
     else:
-        disp = np.array(img.convert("RGB"))
-        raw_data = disp
+        img_disp = img.convert("RGB")
+        raw_data = np.array(img_disp)
 
     # ---------- layout ----------
     col_left, col_right = st.columns([2, 1], gap="large")
 
-    # ---- left: main image + line-scan preview ----
+    # ================= LEFT COLUMN =================
     with col_left:
         st.subheader("1️⃣ Define Line & View Image")
 
@@ -43,7 +44,20 @@ if uploaded:
             index=0,
         )
 
-        # --- coordinate inputs (larger font) ---
+        # --- brightness / contrast sliders ---
+        st.markdown("**Image display adjustments**")
+        colb, colc = st.columns(2)
+        brightness = colb.slider("Brightness", 0.5, 2.0, 1.0, 0.05)
+        contrast = colc.slider("Contrast", 0.5, 2.0, 1.0, 0.05)
+
+        enhancer = ImageEnhance.Brightness(img_disp)
+        img_bright = enhancer.enhance(brightness)
+        enhancer = ImageEnhance.Contrast(img_bright)
+        img_adjusted = enhancer.enhance(contrast)
+        disp = np.array(img_adjusted)
+
+        # --- coordinate inputs ---
+        st.markdown("**Line coordinates (pixels)**")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
             x1 = st.number_input("x₁", 0, raw_data.shape[1] - 1, 0, key="x1")
@@ -85,7 +99,7 @@ if uploaded:
                 )
             )
 
-        # preview
+        # preview line (red)
         fig.add_trace(
             go.Scatter(
                 x=[x1, x2],
@@ -99,7 +113,7 @@ if uploaded:
 
         st.plotly_chart(fig, use_container_width=True)
 
-        # --- add line to state ---
+        # --- add line ---
         if add_line:
             n = int(np.hypot(x2 - x1, y2 - y1))
             if n > 0:
@@ -116,21 +130,28 @@ if uploaded:
                 )
             st.rerun()
 
-        # --- line-scan plot (smaller) ---
+        # --- smaller plot for line-scans ---
         if st.session_state.lines:
-            st.markdown("### 3️⃣ Line-Scan Profiles")
-            fig2, ax = plt.subplots(figsize=(5, 2))
+            st.markdown("### 2️⃣ Line-Scan Profiles")
+            fig2, ax = plt.subplots(figsize=(6, 2.5))
             for i, line in enumerate(st.session_state.lines):
-                ax.plot(np.arange(len(line["intensity"])),
-                        line["intensity"], label=f"Line {i+1}")
+                ax.plot(
+                    np.arange(len(line["intensity"])),
+                    line["intensity"],
+                    label=f"Line {i+1}",
+                )
             ax.set_xlabel("Distance (px)")
             ax.set_ylabel("Intensity (a.u.)")
-            ax.legend(fontsize="small")
+            ax.legend(fontsize="small", loc="upper right")
             st.pyplot(fig2)
 
-    # ---- right: stored scans and downloads ----
+    # ================= RIGHT COLUMN =================
     with col_right:
-        st.subheader("2️⃣ Stored line-scans")
+        # visual spacer to push content lower
+        for _ in range(63):  # increase/decrease number to tune the offset
+            st.text("")
+
+        st.subheader("3️⃣ Stored Line-Scans")
 
         if st.session_state.lines:
             for i, line in enumerate(st.session_state.lines):
@@ -139,7 +160,6 @@ if uploaded:
                     f"({int(line['p2'][0])}, {int(line['p2'][1])})"
                 )
 
-                # --- per-line CSV download ---
                 df_line = pd.DataFrame({
                     "x": line["x"],
                     "y": line["y"],
@@ -154,11 +174,10 @@ if uploaded:
                     key=f"dl_{i}",
                 )
 
-                # --- delete ---
                 if st.button(f"❌ Delete Line {i+1}", key=f"del_{i}"):
                     st.session_state.lines.pop(i)
                     st.rerun()
         else:
-            st.info("No lines yet – define one on the left.")
+            st.info("No stored lines yet – add one on the left.")
 else:
     st.info("👆 Upload an image to start.")

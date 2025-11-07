@@ -8,20 +8,63 @@ import pandas as pd
 import os
 
 st.set_page_config(page_title="Interactive Line Scan", layout="wide")
-st.title("🔬 Interactive Line-Scan Tool (Final Polished Version)")
+st.title("🔬 Interactive Line-Scan Tool (with demo image)")
+
+# ---------- helper ----------
+def load_default_image():
+    """Try to load image_data/sample.png relative to this script."""
+    default_path = os.path.join(os.path.dirname(__file__), "image_data", "sample.png")
+    if os.path.exists(default_path):
+        return Image.open(default_path), "sample.png"
+    return None, None
+
 
 # ---------- state ----------
 if "lines" not in st.session_state:
     st.session_state.lines = []
+if "current_image" not in st.session_state:
+    st.session_state.current_image = None
+if "filename" not in st.session_state:
+    st.session_state.filename = None
 
-uploaded = st.file_uploader("Upload an image", type=["png", "jpg", "jpeg", "tif", "tiff"])
+# ---------- upload or demo ----------
+st.markdown("### 🖼️ Load Image")
 
+col_u1, col_u2 = st.columns([3, 1])
+
+with col_u1:
+    uploaded = st.file_uploader(
+        "Upload your image", type=["png", "jpg", "jpeg", "tif", "tiff"]
+    )
+
+# Spacer lines to align the demo button lower
+with col_u2:
+    for _ in range(3):
+        st.text("")  # pushes button down
+    use_demo = st.button("📂 Load demo image")
+
+# --- handle user input ---
 if uploaded:
-    filename = os.path.splitext(uploaded.name)[0]
-    img = Image.open(uploaded)
+    st.session_state.current_image = Image.open(uploaded)
+    st.session_state.filename = os.path.splitext(uploaded.name)[0]
+
+elif use_demo:
+    img, name = load_default_image()
+    if img is not None:
+        st.session_state.current_image = img
+        st.session_state.filename = os.path.splitext(name)[0]
+        st.session_state.lines.clear()
+        st.success("Demo image loaded successfully.")
+    else:
+        st.warning("No demo image found in ./image_data/sample.png")
+
+# ---------- main app once image available ----------
+if st.session_state.current_image is not None:
+    img = st.session_state.current_image
+    filename = st.session_state.filename
     raw = np.array(img)
 
-    # ---------- prepare image ----------
+    # 16-bit → 8-bit for display
     if img.mode == "I;16":
         disp = (raw / (raw.max() if raw.max() > 0 else 1) * 255).astype(np.uint8)
         img_disp = Image.fromarray(disp)
@@ -33,18 +76,16 @@ if uploaded:
     # ---------- layout ----------
     col_left, col_right = st.columns([2, 1], gap="large")
 
-    # ================= LEFT COLUMN =================
+    # ========== LEFT COLUMN ==========
     with col_left:
         st.subheader("1️⃣ Define Line & View Image")
 
-        # --- colormap selector ---
         cmap = st.selectbox(
             "Colormap",
             ["gray", "viridis", "plasma", "magma", "cividis", "hot", "cool", "jet"],
             index=0,
         )
 
-        # --- brightness / contrast sliders ---
         st.markdown("**Image display adjustments**")
         colb, colc = st.columns(2)
         brightness = colb.slider("Brightness", 0.5, 2.0, 1.0, 0.05)
@@ -56,17 +97,12 @@ if uploaded:
         img_adjusted = enhancer.enhance(contrast)
         disp = np.array(img_adjusted)
 
-        # --- coordinate inputs ---
         st.markdown("**Line coordinates (pixels)**")
         c1, c2, c3, c4 = st.columns(4)
-        with c1:
-            x1 = st.number_input("x₁", 0, raw_data.shape[1] - 1, 0, key="x1")
-        with c2:
-            y1 = st.number_input("y₁", 0, raw_data.shape[0] - 1, 0, key="y1")
-        with c3:
-            x2 = st.number_input("x₂", 0, raw_data.shape[1] - 1, raw_data.shape[1] // 2, key="x2")
-        with c4:
-            y2 = st.number_input("y₂", 0, raw_data.shape[0] - 1, raw_data.shape[0] // 2, key="y2")
+        x1 = c1.number_input("x₁", 0, raw_data.shape[1] - 1, 0, key="x1")
+        y1 = c2.number_input("y₁", 0, raw_data.shape[0] - 1, 0, key="y1")
+        x2 = c3.number_input("x₂", 0, raw_data.shape[1] - 1, raw_data.shape[1] // 2, key="x2")
+        y2 = c4.number_input("y₂", 0, raw_data.shape[0] - 1, raw_data.shape[0] // 2, key="y2")
 
         col_btn1, col_btn2 = st.columns([1, 1])
         add_line = col_btn1.button("➕ Add line-scan")
@@ -99,7 +135,7 @@ if uploaded:
                 )
             )
 
-        # preview line (red)
+        # preview
         fig.add_trace(
             go.Scatter(
                 x=[x1, x2],
@@ -145,10 +181,10 @@ if uploaded:
             ax.legend(fontsize="small", loc="upper right")
             st.pyplot(fig2)
 
-    # ================= RIGHT COLUMN =================
+    # ========== RIGHT COLUMN ==========
     with col_right:
-        # visual spacer to push content lower
-        for _ in range(63):  # increase/decrease number to tune the offset
+        # Spacer to align with left plot bottom
+        for _ in range(63):
             st.text("")
 
         st.subheader("3️⃣ Stored Line-Scans")
@@ -159,7 +195,6 @@ if uploaded:
                     f"**Line {i+1}:** ({int(line['p1'][0])}, {int(line['p1'][1])}) → "
                     f"({int(line['p2'][0])}, {int(line['p2'][1])})"
                 )
-
                 df_line = pd.DataFrame({
                     "x": line["x"],
                     "y": line["y"],
@@ -173,11 +208,11 @@ if uploaded:
                     mime="text/csv",
                     key=f"dl_{i}",
                 )
-
                 if st.button(f"❌ Delete Line {i+1}", key=f"del_{i}"):
                     st.session_state.lines.pop(i)
                     st.rerun()
         else:
             st.info("No stored lines yet – add one on the left.")
+
 else:
-    st.info("👆 Upload an image to start.")
+    st.info("👆 Upload or load the demo image to start.")
